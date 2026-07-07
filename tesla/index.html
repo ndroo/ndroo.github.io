@@ -7,7 +7,7 @@
     --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
     --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
     --fl: #2a78d6; --fr: #1baf7a; --rl: #eda100; --rr: #008300;
-    --critical: #d03b3b;
+    --critical: #d03b3b; --good: #0ca30c;
   }
   @media (prefers-color-scheme: dark) {
     .viz-root {
@@ -27,6 +27,7 @@
     font-size: 12.5px; color: var(--text-secondary); margin-bottom: 10px; }
   .key { display: inline-flex; align-items: center; gap: 6px; }
   .key .swatch { width: 18px; height: 0; border-top: 3px solid; border-radius: 2px; }
+  .key .swatch-box { width: 18px; height: 10px; border-radius: 2px; }
   .chart-wrap { position: relative; }
   svg { display: block; width: 100%; height: auto; }
   .tip { position: absolute; pointer-events: none; display: none; z-index: 2;
@@ -58,7 +59,7 @@
   </details>
 </div>
 <script>
-const DATA = {"vehicle": "my Tesla", "low_psi": 38.0, "rows": [[1783465017000, 47.14, 43.87, 24.66, 44.6, null], [1783465040000, 47.14, 43.87, 24.66, 44.6, null]]};
+const DATA = {"vehicle": "my Tesla", "low_psi": 38.0, "band": [40.0, 45.0], "rows": [[1783465017000, 47.14, 43.87, 24.66, 44.6, null], [1783465040000, 47.14, 43.87, 24.66, 44.6, null], [1783465640000, 47.14, 43.87, 24.66, 44.6, null]]};
 const SERIES = [
   { key: "fl", name: "Front left",  cssVar: "--fl" },
   { key: "fr", name: "Front right", cssVar: "--fr" },
@@ -82,7 +83,7 @@ function draw() {
   svg.innerHTML = "";
   if (!rows.length) return;
   const xs = rows.map(r => r[0]);
-  let vals = [LOW];
+  let vals = [LOW, ...(DATA.band || [])];
   rows.forEach(r => { for (let i = 1; i <= 4; i++) if (r[i] != null) vals.push(r[i]); });
   const yMin = Math.floor(Math.min(...vals) - 1), yMax = Math.ceil(Math.max(...vals) + 1);
   const x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
@@ -90,6 +91,15 @@ function draw() {
   const Y = v => M.t + (1 - (v - yMin) / (yMax - yMin)) * (H - M.t - M.b);
   const el = (n, at) => { const e = document.createElementNS("http://www.w3.org/2000/svg", n);
     for (const k in at) e.setAttribute(k, at[k]); svg.appendChild(e); return e; };
+
+  // recommended-pressure band (drawn first so grid and lines sit on top)
+  if (DATA.band) {
+    const [b0, b1] = DATA.band;
+    el("rect", { x: M.l, y: Y(b1), width: W - M.l - M.r, height: Y(b0) - Y(b1),
+      fill: css("--good"), "fill-opacity": 0.08 });
+    [b0, b1].forEach(b => el("line", { x1: M.l, x2: W - M.r, y1: Y(b), y2: Y(b),
+      stroke: css("--good"), "stroke-opacity": 0.35, "stroke-width": 1 }));
+  }
 
   const step = (yMax - yMin) > 12 ? 4 : 2;
   for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) {
@@ -148,6 +158,8 @@ SERIES.forEach(s => {
   legend.insertAdjacentHTML("beforeend",
     `<span class="key"><span class="swatch" style="border-color:var(${s.cssVar})"></span>${s.name}</span>`);
 });
+if (DATA.band) legend.insertAdjacentHTML("beforeend",
+  `<span class="key"><span class="swatch-box" style="background:color-mix(in srgb, var(--good) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 40%, transparent)"></span>Recommended (${DATA.band[0]}–${DATA.band[1]} psi)</span>`);
 legend.insertAdjacentHTML("beforeend",
   `<span class="key"><span class="swatch" style="border-color:var(--critical)"></span>⚠ Low-pressure threshold (${LOW} psi)</span>`);
 
