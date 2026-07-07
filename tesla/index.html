@@ -1,0 +1,164 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tire pressure</title>
+<style>
+  .viz-root {
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --fl: #2a78d6; --fr: #1baf7a; --rl: #eda100; --rr: #008300;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+      --fl: #3987e5; --fr: #199e70; --rl: #c98500; --rr: #008300;
+    }
+  }
+  body { margin: 0; background: var(--page); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .viz-root { max-width: 880px; margin: 24px auto; padding: 20px 24px 24px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    color: var(--text-primary); }
+  h1 { font-size: 17px; font-weight: 600; margin: 0 0 2px; }
+  .sub { color: var(--text-muted); font-size: 12.5px; margin: 0 0 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    font-size: 12.5px; color: var(--text-secondary); margin-bottom: 10px; }
+  .key { display: inline-flex; align-items: center; gap: 6px; }
+  .key .swatch { width: 18px; height: 0; border-top: 3px solid; border-radius: 2px; }
+  .chart-wrap { position: relative; }
+  svg { display: block; width: 100%; height: auto; }
+  .tip { position: absolute; pointer-events: none; display: none; z-index: 2;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.12); padding: 8px 10px; font-size: 12px;
+    color: var(--text-secondary); min-width: 150px; }
+  .tip .when { color: var(--text-primary); font-weight: 600; margin-bottom: 4px; }
+  .tip .row { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+  .tip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .tip .val { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+  details { margin-top: 14px; font-size: 12.5px; color: var(--text-secondary); }
+  summary { cursor: pointer; color: var(--text-muted); }
+  table { border-collapse: collapse; margin-top: 8px; width: 100%; }
+  th, td { text-align: right; padding: 3px 10px; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--grid); }
+</style>
+<div class="viz-root">
+  <h1 id="title">Tire pressure</h1>
+  <p class="sub" id="sub"></p>
+  <div class="legend" id="legend"></div>
+  <div class="chart-wrap">
+    <svg id="chart" viewBox="0 0 840 360" role="img" aria-label="Tire pressure over time"></svg>
+    <div class="tip" id="tip"></div>
+  </div>
+  <details>
+    <summary>Data table</summary>
+    <div style="overflow-x:auto"><table id="tbl"></table></div>
+  </details>
+</div>
+<script>
+const DATA = {"vehicle": "my Tesla", "low_psi": 38.0, "rows": [[1783465017000, 47.14, 43.87, 24.66, 44.6, null], [1783465040000, 47.14, 43.87, 24.66, 44.6, null]]};
+const SERIES = [
+  { key: "fl", name: "Front left",  cssVar: "--fl" },
+  { key: "fr", name: "Front right", cssVar: "--fr" },
+  { key: "rl", name: "Rear left",   cssVar: "--rl" },
+  { key: "rr", name: "Rear right",  cssVar: "--rr" },
+];
+const css = v => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(v).trim();
+const W = 840, H = 360, M = { t: 12, r: 16, b: 30, l: 44 };
+const rows = DATA.rows;                       // [ts_ms, fl, fr, rl, rr, temp_c|null] in psi
+const LOW = DATA.low_psi;
+
+document.getElementById("title").textContent = "Tire pressure — " + DATA.vehicle;
+const fmtD = ms => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const fmtDT = ms => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+document.getElementById("sub").textContent = rows.length
+  ? `${rows.length} readings, ${fmtD(rows[0][0])} – ${fmtD(rows[rows.length - 1][0])}. Pressures in psi.`
+  : "No readings logged yet — run: python3 tesla.py log";
+
+function draw() {
+  const svg = document.getElementById("chart");
+  svg.innerHTML = "";
+  if (!rows.length) return;
+  const xs = rows.map(r => r[0]);
+  let vals = [LOW];
+  rows.forEach(r => { for (let i = 1; i <= 4; i++) if (r[i] != null) vals.push(r[i]); });
+  const yMin = Math.floor(Math.min(...vals) - 1), yMax = Math.ceil(Math.max(...vals) + 1);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
+  const X = t => M.l + (x1 === x0 ? 0.5 : (t - x0) / (x1 - x0)) * (W - M.l - M.r);
+  const Y = v => M.t + (1 - (v - yMin) / (yMax - yMin)) * (H - M.t - M.b);
+  const el = (n, at) => { const e = document.createElementNS("http://www.w3.org/2000/svg", n);
+    for (const k in at) e.setAttribute(k, at[k]); svg.appendChild(e); return e; };
+
+  const step = (yMax - yMin) > 12 ? 4 : 2;
+  for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), stroke: css("--grid"), "stroke-width": 1 });
+    el("text", { x: M.l - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 11,
+      fill: css("--text-muted") }).textContent = v;
+  }
+  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: css("--baseline"), "stroke-width": 1 });
+  const nTicks = Math.min(5, rows.length);
+  for (let i = 0; i < nTicks; i++) {
+    const t = x0 + (x1 - x0) * (nTicks === 1 ? 0.5 : i / (nTicks - 1));
+    el("text", { x: X(t), y: H - M.b + 18, "text-anchor": "middle", "font-size": 11,
+      fill: css("--text-muted") }).textContent = fmtD(t);
+  }
+  // low-pressure threshold
+  el("line", { x1: M.l, x2: W - M.r, y1: Y(LOW), y2: Y(LOW), stroke: css("--critical"), "stroke-width": 1.5 });
+
+  SERIES.forEach((s, i) => {
+    const pts = rows.filter(r => r[i + 1] != null);
+    if (!pts.length) return;
+    const c = css(s.cssVar);
+    el("path", { d: pts.map((r, j) => (j ? "L" : "M") + X(r[0]).toFixed(1) + " " + Y(r[i + 1]).toFixed(1)).join(""),
+      fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+    const last = pts[pts.length - 1];
+    el("circle", { cx: X(last[0]), cy: Y(last[i + 1]), r: 6, fill: css("--surface-1") });
+    el("circle", { cx: X(last[0]), cy: Y(last[i + 1]), r: 4, fill: c });
+  });
+
+  // hover: crosshair + tooltip
+  const cross = el("line", { y1: M.t, y2: H - M.b, stroke: css("--baseline"), "stroke-width": 1, visibility: "hidden" });
+  const tip = document.getElementById("tip");
+  const wrap = svg.parentElement;
+  svg.addEventListener("mousemove", ev => {
+    const box = svg.getBoundingClientRect();
+    const mx = (ev.clientX - box.left) * W / box.width;
+    let best = 0, bd = Infinity;
+    rows.forEach((r, i) => { const d = Math.abs(X(r[0]) - mx); if (d < bd) { bd = d; best = i; } });
+    const r = rows[best], px = X(r[0]);
+    cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+    let html = `<div class="when">${fmtDT(r[0])}</div>`;
+    SERIES.forEach((s, i) => { if (r[i + 1] != null)
+      html += `<div class="row"><span class="dot" style="background:${css(s.cssVar)}"></span>${s.name}<span class="val">${r[i + 1].toFixed(1)}</span></div>`; });
+    if (r[5] != null) html += `<div class="row" style="color:var(--text-muted)">Outside<span class="val" style="color:var(--text-muted)">${r[5].toFixed(0)}°C</span></div>`;
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const wb = wrap.getBoundingClientRect();
+    const left = (px / W) * wb.width;
+    tip.style.left = Math.min(left + 14, wb.width - tip.offsetWidth - 4) + "px";
+    tip.style.top = "16px";
+  });
+  svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+}
+
+const legend = document.getElementById("legend");
+SERIES.forEach(s => {
+  legend.insertAdjacentHTML("beforeend",
+    `<span class="key"><span class="swatch" style="border-color:var(${s.cssVar})"></span>${s.name}</span>`);
+});
+legend.insertAdjacentHTML("beforeend",
+  `<span class="key"><span class="swatch" style="border-color:var(--critical)"></span>⚠ Low-pressure threshold (${LOW} psi)</span>`);
+
+const tbl = document.getElementById("tbl");
+tbl.innerHTML = "<tr><th>Time</th><th>FL</th><th>FR</th><th>RL</th><th>RR</th><th>Outside °C</th></tr>" +
+  rows.slice(-200).reverse().map(r =>
+    `<tr><td>${fmtDT(r[0])}</td>` +
+    [1, 2, 3, 4].map(i => `<td>${r[i] == null ? "–" : r[i].toFixed(1)}</td>`).join("") +
+    `<td>${r[5] == null ? "–" : r[5].toFixed(0)}</td></tr>`).join("");
+
+draw();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+addEventListener("resize", () => {});
+</script>
