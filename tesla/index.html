@@ -1,12 +1,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tire pressure</title>
+<title>Tesla dashboard</title>
 <style>
   .viz-root {
     --surface-1: #fcfcfb; --page: #f9f9f7;
     --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
     --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
     --fl: #2a78d6; --fr: #1baf7a; --rl: #eda100; --rr: #008300;
+    --battery: #2a78d6; --charging: #1baf7a;
     --critical: #d03b3b; --good: #0ca30c;
   }
   @media (prefers-color-scheme: dark) {
@@ -15,14 +16,24 @@
       --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
       --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
       --fl: #3987e5; --fr: #199e70; --rl: #c98500; --rr: #008300;
+      --battery: #3987e5; --charging: #199e70;
     }
   }
   body { margin: 0; background: var(--page); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .viz-root { max-width: 880px; margin: 24px auto; padding: 20px 24px 24px;
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-    color: var(--text-primary); }
-  h1 { font-size: 17px; font-weight: 600; margin: 0 0 2px; }
-  .sub { color: var(--text-muted); font-size: 12.5px; margin: 0 0 14px; }
+  .viz-root { max-width: 880px; margin: 24px auto; padding: 0 12px 40px; color: var(--text-primary); }
+  h1 { font-size: 19px; font-weight: 600; margin: 8px 4px 2px; }
+  .sub { color: var(--text-muted); font-size: 12.5px; margin: 0 4px 16px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 20px 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+  .card .note { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; }
+  .tile .lbl { font-size: 12px; color: var(--text-muted); }
+  .tile .val { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .tile .sub2 { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; }
   .legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
     font-size: 12.5px; color: var(--text-secondary); margin-bottom: 10px; }
   .key { display: inline-flex; align-items: center; gap: 6px; }
@@ -33,12 +44,12 @@
   .tip { position: absolute; pointer-events: none; display: none; z-index: 2;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.12); padding: 8px 10px; font-size: 12px;
-    color: var(--text-secondary); min-width: 150px; }
+    color: var(--text-secondary); min-width: 140px; }
   .tip .when { color: var(--text-primary); font-weight: 600; margin-bottom: 4px; }
   .tip .row { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
   .tip .dot { width: 8px; height: 8px; border-radius: 50%; }
   .tip .val { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-primary); }
-  details { margin-top: 14px; font-size: 12.5px; color: var(--text-secondary); }
+  details { margin-top: 12px; font-size: 12.5px; color: var(--text-secondary); }
   summary { cursor: pointer; color: var(--text-muted); }
   table { border-collapse: collapse; margin-top: 8px; width: 100%; }
   th, td { text-align: right; padding: 3px 10px; font-variant-numeric: tabular-nums; }
@@ -46,20 +57,44 @@
   th { color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--grid); }
 </style>
 <div class="viz-root">
-  <h1 id="title">Tire pressure</h1>
+  <h1 id="title">Tesla dashboard</h1>
   <p class="sub" id="sub"></p>
-  <div class="legend" id="legend"></div>
-  <div class="chart-wrap">
-    <svg id="chart" viewBox="0 0 840 360" role="img" aria-label="Tire pressure over time"></svg>
-    <div class="tip" id="tip"></div>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card" id="tires-card">
+    <h2>Tire pressure</h2>
+    <p class="note" id="tires-note"></p>
+    <div class="legend" id="legend"></div>
+    <div class="chart-wrap">
+      <svg id="chart" viewBox="0 0 840 340" role="img" aria-label="Tire pressure over time"></svg>
+      <div class="tip" id="tip"></div>
+    </div>
+    <details>
+      <summary>Data table</summary>
+      <div style="overflow-x:auto"><table id="tbl"></table></div>
+    </details>
   </div>
-  <details>
-    <summary>Data table</summary>
-    <div style="overflow-x:auto"><table id="tbl"></table></div>
-  </details>
+
+  <div class="card" id="battery-card" hidden>
+    <h2>Battery level</h2>
+    <p class="note">Last 14 days, hourly while the car is awake.</p>
+    <div class="chart-wrap">
+      <svg id="bchart" viewBox="0 0 840 200" role="img" aria-label="Battery level over time"></svg>
+      <div class="tip" id="btip"></div>
+    </div>
+  </div>
+
+  <div class="card" id="charging-card" hidden>
+    <h2>Supercharging by year</h2>
+    <p class="note" id="charging-note"></p>
+    <div class="chart-wrap">
+      <svg id="cchart" viewBox="0 0 840 220" role="img" aria-label="Supercharging energy by year"></svg>
+      <div class="tip" id="ctip"></div>
+    </div>
+  </div>
 </div>
 <script>
-const DATA = {"vehicle": "my Tesla", "low_psi": 38.0, "band": [40.0, 45.0], "rows": [[1783465017000, 47.14, 43.87, 24.66, 44.6, null], [1783465040000, 47.14, 43.87, 24.66, 44.6, null], [1783465640000, 47.14, 43.87, 24.66, 44.6, null]]};
+const DATA = {"vehicle": "my Tesla", "low_psi": 38.0, "band": [40.0, 45.0], "rows": [[1783465017000, 47.14, 43.87, 24.66, 44.6, null], [1783465040000, 47.14, 43.87, 24.66, 44.6, null], [1783465640000, 47.14, 43.87, 24.66, 44.6, null]], "tiles": {"battery_level": null, "charge_limit_soc": null, "battery_range": null, "odometer": null, "outside_temp": null, "version": null}, "battery": [], "charging": [{"year": "2021", "sessions": 1, "kwh": 37.0, "cost": {}}, {"year": "2022", "sessions": 17, "kwh": 582.0, "cost": {"CAD": 285.36999999999995, "USD": 3.9}}, {"year": "2023", "sessions": 6, "kwh": 158.345, "cost": {"CAD": 75.87}}, {"year": "2024", "sessions": 1, "kwh": 17.862, "cost": {"CAD": 9.28}}, {"year": "2025", "sessions": 6, "kwh": 141.4533, "cost": {"CAD": 59.91, "USD": 9.24}}, {"year": "2026", "sessions": 2, "kwh": 57.7194, "cost": {"CAD": 23.32}}]};
 const SERIES = [
   { key: "fl", name: "Front left",  cssVar: "--fl" },
   { key: "fr", name: "Front right", cssVar: "--fr" },
@@ -67,110 +102,197 @@ const SERIES = [
   { key: "rr", name: "Rear right",  cssVar: "--rr" },
 ];
 const css = v => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(v).trim();
-const W = 840, H = 360, M = { t: 12, r: 16, b: 30, l: 44 };
-const rows = DATA.rows;                       // [ts_ms, fl, fr, rl, rr, temp_c|null] in psi
+const W = 840;
+const rows = DATA.rows;
 const LOW = DATA.low_psi;
-
-document.getElementById("title").textContent = "Tire pressure — " + DATA.vehicle;
 const fmtD = ms => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const fmtDT = ms => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-document.getElementById("sub").textContent = rows.length
-  ? `${rows.length} readings, ${fmtD(rows[0][0])} – ${fmtD(rows[rows.length - 1][0])}. Pressures in psi.`
-  : "No readings logged yet — run: python3 tesla.py log";
+const mkEl = (svg, n, at) => { const e = document.createElementNS("http://www.w3.org/2000/svg", n);
+  for (const k in at) e.setAttribute(k, at[k]); svg.appendChild(e); return e; };
 
-function draw() {
-  const svg = document.getElementById("chart");
-  svg.innerHTML = "";
-  if (!rows.length) return;
-  const xs = rows.map(r => r[0]);
-  let vals = [LOW, ...(DATA.band || [])];
-  rows.forEach(r => { for (let i = 1; i <= 4; i++) if (r[i] != null) vals.push(r[i]); });
-  const yMin = Math.floor(Math.min(...vals) - 1), yMax = Math.ceil(Math.max(...vals) + 1);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
-  const X = t => M.l + (x1 === x0 ? 0.5 : (t - x0) / (x1 - x0)) * (W - M.l - M.r);
-  const Y = v => M.t + (1 - (v - yMin) / (yMax - yMin)) * (H - M.t - M.b);
-  const el = (n, at) => { const e = document.createElementNS("http://www.w3.org/2000/svg", n);
-    for (const k in at) e.setAttribute(k, at[k]); svg.appendChild(e); return e; };
+document.getElementById("sub").textContent = "Updated " + (rows.length || DATA.battery?.length
+  ? fmtDT(Math.max(rows.length ? rows[rows.length-1][0] : 0, DATA.battery?.length ? DATA.battery[DATA.battery.length-1][0] : 0))
+  : "never") + " · refreshes hourly";
 
-  // recommended-pressure band (drawn first so grid and lines sit on top)
-  if (DATA.band) {
-    const [b0, b1] = DATA.band;
-    el("rect", { x: M.l, y: Y(b1), width: W - M.l - M.r, height: Y(b0) - Y(b1),
-      fill: css("--good"), "fill-opacity": 0.08 });
-    [b0, b1].forEach(b => el("line", { x1: M.l, x2: W - M.r, y1: Y(b), y2: Y(b),
-      stroke: css("--good"), "stroke-opacity": 0.35, "stroke-width": 1 }));
-  }
+// ---- stat tiles ----
+if (DATA.tiles) {
+  const t = DATA.tiles, tiles = [];
+  if (t.battery_level != null) tiles.push(["Battery", t.battery_level + "%", t.charge_limit_soc ? "limit " + t.charge_limit_soc + "%" : ""]);
+  if (t.battery_range != null) tiles.push(["Est. range", Math.round(t.battery_range) + " mi", ""]);
+  if (t.odometer != null) tiles.push(["Odometer", Math.round(t.odometer).toLocaleString() + " mi", ""]);
+  if (t.outside_temp != null) tiles.push(["Outside", Math.round(t.outside_temp) + "°C", ""]);
+  if (t.version) tiles.push(["Firmware", t.version, ""]);
+  document.getElementById("tiles").innerHTML = tiles.map(([l, v, s]) =>
+    `<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div>` +
+    (s ? `<div class="sub2">${s}</div>` : "") + `</div>`).join("");
+}
 
-  const step = (yMax - yMin) > 12 ? 4 : 2;
-  for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) {
-    el("line", { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), stroke: css("--grid"), "stroke-width": 1 });
-    el("text", { x: M.l - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 11,
-      fill: css("--text-muted") }).textContent = v;
-  }
-  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: css("--baseline"), "stroke-width": 1 });
-  const nTicks = Math.min(5, rows.length);
-  for (let i = 0; i < nTicks; i++) {
-    const t = x0 + (x1 - x0) * (nTicks === 1 ? 0.5 : i / (nTicks - 1));
-    el("text", { x: X(t), y: H - M.b + 18, "text-anchor": "middle", "font-size": 11,
-      fill: css("--text-muted") }).textContent = fmtD(t);
-  }
-  // low-pressure threshold
-  el("line", { x1: M.l, x2: W - M.r, y1: Y(LOW), y2: Y(LOW), stroke: css("--critical"), "stroke-width": 1.5 });
-
-  SERIES.forEach((s, i) => {
-    const pts = rows.filter(r => r[i + 1] != null);
-    if (!pts.length) return;
-    const c = css(s.cssVar);
-    el("path", { d: pts.map((r, j) => (j ? "L" : "M") + X(r[0]).toFixed(1) + " " + Y(r[i + 1]).toFixed(1)).join(""),
-      fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
-    const last = pts[pts.length - 1];
-    el("circle", { cx: X(last[0]), cy: Y(last[i + 1]), r: 6, fill: css("--surface-1") });
-    el("circle", { cx: X(last[0]), cy: Y(last[i + 1]), r: 4, fill: c });
-  });
-
-  // hover: crosshair + tooltip
-  const cross = el("line", { y1: M.t, y2: H - M.b, stroke: css("--baseline"), "stroke-width": 1, visibility: "hidden" });
-  const tip = document.getElementById("tip");
-  const wrap = svg.parentElement;
+// ---- shared line-chart hover ----
+function addCrosshair(svg, tipEl, pts, X, Y, M, H, render) {
+  const cross = mkEl(svg, "line", { y1: M.t, y2: H - M.b, stroke: css("--baseline"),
+    "stroke-width": 1, visibility: "hidden" });
   svg.addEventListener("mousemove", ev => {
     const box = svg.getBoundingClientRect();
     const mx = (ev.clientX - box.left) * W / box.width;
     let best = 0, bd = Infinity;
-    rows.forEach((r, i) => { const d = Math.abs(X(r[0]) - mx); if (d < bd) { bd = d; best = i; } });
-    const r = rows[best], px = X(r[0]);
+    pts.forEach((p, i) => { const d = Math.abs(X(p[0]) - mx); if (d < bd) { bd = d; best = i; } });
+    const p = pts[best], px = X(p[0]);
     cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+    tipEl.innerHTML = render(p);
+    tipEl.style.display = "block";
+    const wb = svg.parentElement.getBoundingClientRect();
+    tipEl.style.left = Math.min((px / W) * wb.width + 14, wb.width - tipEl.offsetWidth - 4) + "px";
+    tipEl.style.top = "12px";
+  });
+  svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tipEl.style.display = "none"; });
+}
+
+function axes(svg, M, H, yMin, yMax, step, Y, fmt) {
+  for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) {
+    mkEl(svg, "line", { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), stroke: css("--grid"), "stroke-width": 1 });
+    mkEl(svg, "text", { x: M.l - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 11,
+      fill: css("--text-muted") }).textContent = fmt ? fmt(v) : v;
+  }
+  mkEl(svg, "line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: css("--baseline"), "stroke-width": 1 });
+}
+
+function xTicks(svg, M, H, x0, x1, X, n) {
+  for (let i = 0; i < n; i++) {
+    const t = x0 + (x1 - x0) * (n === 1 ? 0.5 : i / (n - 1));
+    mkEl(svg, "text", { x: X(t), y: H - M.b + 18, "text-anchor": "middle", "font-size": 11,
+      fill: css("--text-muted") }).textContent = fmtD(t);
+  }
+}
+
+// ---- tire chart ----
+function drawTires() {
+  const svg = document.getElementById("chart"), H = 340, M = { t: 12, r: 16, b: 30, l: 44 };
+  svg.innerHTML = "";
+  document.getElementById("tires-note").textContent = rows.length
+    ? `${rows.length} readings, ${fmtD(rows[0][0])} – ${fmtD(rows[rows.length - 1][0])}. Pressures in psi.`
+    : "No readings logged yet.";
+  if (!rows.length) return;
+  let vals = [LOW, ...(DATA.band || [])];
+  rows.forEach(r => { for (let i = 1; i <= 4; i++) if (r[i] != null) vals.push(r[i]); });
+  const yMin = Math.floor(Math.min(...vals) - 1), yMax = Math.ceil(Math.max(...vals) + 1);
+  const x0 = rows[0][0], x1 = rows[rows.length - 1][0] || x0 + 1;
+  const X = t => M.l + (x1 === x0 ? 0.5 : (t - x0) / (x1 - x0)) * (W - M.l - M.r);
+  const Y = v => M.t + (1 - (v - yMin) / (yMax - yMin)) * (H - M.t - M.b);
+  if (DATA.band) {
+    const [b0, b1] = DATA.band;
+    mkEl(svg, "rect", { x: M.l, y: Y(b1), width: W - M.l - M.r, height: Y(b0) - Y(b1),
+      fill: css("--good"), "fill-opacity": 0.08 });
+    [b0, b1].forEach(b => mkEl(svg, "line", { x1: M.l, x2: W - M.r, y1: Y(b), y2: Y(b),
+      stroke: css("--good"), "stroke-opacity": 0.35, "stroke-width": 1 }));
+  }
+  axes(svg, M, H, yMin, yMax, (yMax - yMin) > 12 ? 4 : 2, Y);
+  xTicks(svg, M, H, x0, x1, X, Math.min(5, rows.length));
+  mkEl(svg, "line", { x1: M.l, x2: W - M.r, y1: Y(LOW), y2: Y(LOW), stroke: css("--critical"), "stroke-width": 1.5 });
+  SERIES.forEach((s, i) => {
+    const pts = rows.filter(r => r[i + 1] != null);
+    if (!pts.length) return;
+    const c = css(s.cssVar);
+    mkEl(svg, "path", { d: pts.map((r, j) => (j ? "L" : "M") + X(r[0]).toFixed(1) + " " + Y(r[i + 1]).toFixed(1)).join(""),
+      fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+    const last = pts[pts.length - 1];
+    mkEl(svg, "circle", { cx: X(last[0]), cy: Y(last[i + 1]), r: 6, fill: css("--surface-1") });
+    mkEl(svg, "circle", { cx: X(last[0]), cy: Y(last[i + 1]), r: 4, fill: c });
+  });
+  addCrosshair(svg, document.getElementById("tip"), rows, X, Y, M, H, r => {
     let html = `<div class="when">${fmtDT(r[0])}</div>`;
     SERIES.forEach((s, i) => { if (r[i + 1] != null)
       html += `<div class="row"><span class="dot" style="background:${css(s.cssVar)}"></span>${s.name}<span class="val">${r[i + 1].toFixed(1)}</span></div>`; });
     if (r[5] != null) html += `<div class="row" style="color:var(--text-muted)">Outside<span class="val" style="color:var(--text-muted)">${r[5].toFixed(0)}°C</span></div>`;
-    tip.innerHTML = html;
-    tip.style.display = "block";
-    const wb = wrap.getBoundingClientRect();
-    const left = (px / W) * wb.width;
-    tip.style.left = Math.min(left + 14, wb.width - tip.offsetWidth - 4) + "px";
-    tip.style.top = "16px";
+    return html;
   });
-  svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
 }
 
+// ---- battery chart ----
+function drawBattery() {
+  const pts = (DATA.battery || []).filter(p => p[1] != null);
+  if (pts.length < 2) return;
+  document.getElementById("battery-card").hidden = false;
+  const svg = document.getElementById("bchart"), H = 200, M = { t: 10, r: 16, b: 28, l: 44 };
+  svg.innerHTML = "";
+  const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
+  const lv = pts.map(p => p[1]);
+  const yMin = Math.max(0, Math.floor((Math.min(...lv) - 5) / 10) * 10), yMax = 100;
+  const X = t => M.l + (x1 === x0 ? 0.5 : (t - x0) / (x1 - x0)) * (W - M.l - M.r);
+  const Y = v => M.t + (1 - (v - yMin) / (yMax - yMin)) * (H - M.t - M.b);
+  axes(svg, M, H, yMin, yMax, 20, Y, v => v + "%");
+  xTicks(svg, M, H, x0, x1, X, Math.min(5, pts.length));
+  const c = css("--battery");
+  mkEl(svg, "path", { d: pts.map((p, j) => (j ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1)).join(""),
+    fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+  const last = pts[pts.length - 1];
+  mkEl(svg, "circle", { cx: X(last[0]), cy: Y(last[1]), r: 6, fill: css("--surface-1") });
+  mkEl(svg, "circle", { cx: X(last[0]), cy: Y(last[1]), r: 4, fill: c });
+  addCrosshair(svg, document.getElementById("btip"), pts, X, Y, M, H, p =>
+    `<div class="when">${fmtDT(p[0])}</div>` +
+    `<div class="row"><span class="dot" style="background:${c}"></span>Battery<span class="val">${p[1]}%</span></div>`);
+}
+
+// ---- supercharging by year ----
+function drawCharging() {
+  const yrs = DATA.charging || [];
+  if (!yrs.length) return;
+  document.getElementById("charging-card").hidden = false;
+  const total = yrs.reduce((a, y) => a + y.kwh, 0);
+  const sessions = yrs.reduce((a, y) => a + y.sessions, 0);
+  document.getElementById("charging-note").textContent =
+    `${sessions} sessions, ${Math.round(total)} kWh lifetime. Totals only — locations stay private.`;
+  const svg = document.getElementById("cchart"), H = 220, M = { t: 14, r: 16, b: 28, l: 44 };
+  svg.innerHTML = "";
+  const maxK = Math.max(...yrs.map(y => y.kwh));
+  const yMax = Math.ceil(maxK / 50) * 50 || 50;
+  const Y = v => M.t + (1 - v / yMax) * (H - M.t - M.b);
+  axes(svg, M, H, 0, yMax, yMax > 200 ? 100 : 50, Y);
+  const slot = (W - M.l - M.r) / yrs.length;
+  const bw = Math.min(24, slot * 0.5);
+  const tipEl = document.getElementById("ctip");
+  yrs.forEach((y, i) => {
+    const cx = M.l + slot * (i + 0.5);
+    const h = Y(0) - Y(y.kwh);
+    const bar = mkEl(svg, "path", { d:
+      `M ${cx - bw / 2} ${Y(0)} v ${-Math.max(h - 4, 0)} q 0 -4 4 -4 h ${bw - 8} q 4 0 4 4 v ${Math.max(h - 4, 0)} z`,
+      fill: css("--charging") });
+    mkEl(svg, "text", { x: cx, y: Y(y.kwh) - 6, "text-anchor": "middle", "font-size": 11,
+      fill: css("--text-secondary") }).textContent = Math.round(y.kwh);
+    mkEl(svg, "text", { x: cx, y: H - M.b + 18, "text-anchor": "middle", "font-size": 11,
+      fill: css("--text-muted") }).textContent = y.year;
+    const show = () => {
+      tipEl.innerHTML = `<div class="when">${y.year}</div>` +
+        `<div class="row">Sessions<span class="val">${y.sessions}</span></div>` +
+        `<div class="row">Energy<span class="val">${Math.round(y.kwh)} kWh</span></div>` +
+        Object.entries(y.cost).map(([cur, amt]) =>
+          `<div class="row">Cost<span class="val">${amt.toFixed(2)} ${cur}</span></div>`).join("");
+      tipEl.style.display = "block";
+      const wb = svg.parentElement.getBoundingClientRect();
+      tipEl.style.left = Math.min((cx / W) * wb.width + 14, wb.width - tipEl.offsetWidth - 4) + "px";
+      tipEl.style.top = "10px";
+    };
+    bar.addEventListener("mouseenter", show);
+    bar.addEventListener("mouseleave", () => tipEl.style.display = "none");
+  });
+}
+
+// ---- tire legend + table ----
 const legend = document.getElementById("legend");
-SERIES.forEach(s => {
-  legend.insertAdjacentHTML("beforeend",
-    `<span class="key"><span class="swatch" style="border-color:var(${s.cssVar})"></span>${s.name}</span>`);
-});
+SERIES.forEach(s => legend.insertAdjacentHTML("beforeend",
+  `<span class="key"><span class="swatch" style="border-color:var(${s.cssVar})"></span>${s.name}</span>`));
 if (DATA.band) legend.insertAdjacentHTML("beforeend",
   `<span class="key"><span class="swatch-box" style="background:color-mix(in srgb, var(--good) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 40%, transparent)"></span>Recommended (${DATA.band[0]}–${DATA.band[1]} psi)</span>`);
 legend.insertAdjacentHTML("beforeend",
   `<span class="key"><span class="swatch" style="border-color:var(--critical)"></span>⚠ Low-pressure threshold (${LOW} psi)</span>`);
 
-const tbl = document.getElementById("tbl");
-tbl.innerHTML = "<tr><th>Time</th><th>FL</th><th>FR</th><th>RL</th><th>RR</th><th>Outside °C</th></tr>" +
+document.getElementById("tbl").innerHTML =
+  "<tr><th>Time</th><th>FL</th><th>FR</th><th>RL</th><th>RR</th><th>Outside °C</th></tr>" +
   rows.slice(-200).reverse().map(r =>
     `<tr><td>${fmtDT(r[0])}</td>` +
     [1, 2, 3, 4].map(i => `<td>${r[i] == null ? "–" : r[i].toFixed(1)}</td>`).join("") +
     `<td>${r[5] == null ? "–" : r[5].toFixed(0)}</td></tr>`).join("");
 
-draw();
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
-addEventListener("resize", () => {});
+function drawAll() { drawTires(); drawBattery(); drawCharging(); }
+drawAll();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
 </script>
