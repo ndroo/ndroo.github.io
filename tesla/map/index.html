@@ -1,0 +1,83 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Car location map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<style>
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f9f9f7; }
+  #map { position: fixed; inset: 0; display: none; }
+  .gate { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .panel { background: #fcfcfb; border: 1px solid rgba(11,11,11,0.10); border-radius: 12px;
+    padding: 28px 30px; max-width: 320px; text-align: center;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+  h1 { font-size: 16px; margin: 0 0 6px; color: #0b0b0b; }
+  p { font-size: 13px; color: #52514e; margin: 0 0 16px; }
+  input { width: 100%; box-sizing: border-box; font-size: 15px; padding: 9px 12px;
+    border: 1px solid rgba(11,11,11,0.18); border-radius: 8px; margin-bottom: 10px;
+    text-align: center; letter-spacing: 0.02em; }
+  button { width: 100%; font-size: 14px; font-weight: 600; padding: 9px 12px; cursor: pointer;
+    border: none; border-radius: 8px; background: #2a78d6; color: #fff; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .err { color: #d03b3b; font-size: 12.5px; min-height: 16px; margin-top: 8px; }
+  .badge { position: fixed; top: 12px; right: 12px; z-index: 1000; display: none;
+    background: rgba(252,252,251,0.92); border: 1px solid rgba(11,11,11,0.10);
+    border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: #52514e; }
+  .badge b { color: #0b0b0b; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0d0d0d; }
+    .panel { background: #1a1a19; border-color: rgba(255,255,255,0.10); }
+    h1 { color: #fff; } p { color: #c3c2b7; }
+    input { background: #0d0d0d; color: #fff; border-color: rgba(255,255,255,0.18); }
+  }
+</style>
+<div id="map"></div>
+<div class="badge" id="badge"><b id="n"></b> logged positions</div>
+<div class="gate" id="gate">
+  <form class="panel" id="form">
+    <h1>Car location map</h1>
+    <p>Enter the access code to decrypt the map. Data is decrypted in your browser only.</p>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="access code" autofocus>
+    <button id="go" type="submit">Unlock</button>
+    <div class="err" id="err"></div>
+  </form>
+</div>
+<script>
+const PAYLOAD = "SaxXMO52RgDB1b5O6T79EwphxyiHBdGQYuG9pHmlwcCVe2X50Reyy0JMFbsrEeypmuKWyCfoOMAuGOjVEtCAYvg2IxRMn9qKlmO5DoYLYx17xpfsSNY+ubshsvKuzfMIV4iUk0wvZ1ZRO+kkHaHLD5Y0UE/lYek=";
+document.getElementById("form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const btn = document.getElementById("go"), err = document.getElementById("err");
+  btn.disabled = true; err.textContent = "";
+  try {
+    const raw = Uint8Array.from(atob(PAYLOAD), c => c.charCodeAt(0));
+    const salt = raw.slice(0, 16), iv = raw.slice(16, 28), ct = raw.slice(28);
+    const km = await crypto.subtle.importKey("raw",
+      new TextEncoder().encode(document.getElementById("pw").value), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" }, km,
+      { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+    render(JSON.parse(new TextDecoder().decode(pt)));
+  } catch (e) {
+    err.textContent = "Wrong code — try again.";
+    btn.disabled = false;
+  }
+});
+function render(pts) {
+  document.getElementById("gate").style.display = "none";
+  document.getElementById("map").style.display = "block";
+  document.getElementById("badge").style.display = "block";
+  document.getElementById("n").textContent = pts.length;
+  const map = L.map("map");
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
+  if (pts.length) {
+    map.fitBounds(L.latLngBounds(pts.map(p => L.latLng(p[0], p[1]))).pad(0.2));
+    L.heatLayer(pts.map(p => [p[0], p[1], 1]), { radius: 22, blur: 18, minOpacity: 0.35, maxZoom: 17 }).addTo(map);
+  } else {
+    map.setView([45, -79], 6);
+  }
+}
+</script>
